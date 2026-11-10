@@ -13,6 +13,13 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - name: Storage tests (JavaScript)
+        run: node tools/test/db.test.js
+      - name: Storage tests (Java)
+        run: |
+          mkdir -p /tmp/store-test
+          javac -d /tmp/store-test tools/test/java/android/content/Context.java app/src/main/java/dev/stride/app/Store.java tools/test/java/dev/stride/app/StoreTest.java
+          java -cp /tmp/store-test dev.stride.app.StoreTest
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon

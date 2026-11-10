@@ -19,6 +19,7 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.provider.DocumentsContract;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.View;
@@ -36,9 +37,12 @@ import android.widget.Toast;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 
 public class MainActivity extends Activity implements SensorEventListener {
 
@@ -177,8 +181,10 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private class Bridge {
-        @JavascriptInterface public String load(String key) { return Store.load(MainActivity.this, key); }
+        // An unreadable file is sent as text that is never valid JSON, because a null may not cross the bridge as null.
+        @JavascriptInterface public String load(String key) { String v = Store.load(MainActivity.this, key); return v != null ? v : "\u0000unreadable"; }
         @JavascriptInterface public boolean save(String key, String json) { return Store.save(MainActivity.this, key, json); }
+        @JavascriptInterface public boolean quarantine(String key) { return Store.quarantine(MainActivity.this, key); }
 
         @JavascriptInterface public void speak(String text) { Speaker.get(MainActivity.this).say(text); }
         @JavascriptInterface public void speakNow(String text) { Speaker.get(MainActivity.this).sayNow(text); }
@@ -303,6 +309,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         // ---- backup
         @JavascriptInterface public void exportData(String json, String fileName) {
             exportPayload = json;
+            // Also keep it on disk: Android may end the app while the file picker is open, losing the field.
+            try { Files.write(pendingExport().toPath(), json.getBytes(StandardCharsets.UTF_8)); } catch (Exception ignored) { }
             runOnUiThread(() -> {
                 Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
                         .setType("application/json").putExtra(Intent.EXTRA_TITLE, fileName);
@@ -333,6 +341,8 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     // ------------------------------------------------------------------ results
 
+    private File pendingExport() { return new File(getCacheDir(), "pending-export.json"); }
+
     @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
         super.onRequestPermissionsResult(req, perms, res);
@@ -348,15 +358,32 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (fileCallback != null) fileCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
             fileCallback = null;
         } else if (req == REQ_EXPORT) {
-            if (result == RESULT_OK && uri != null && exportPayload != null) {
-                try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
-                    out.write(exportPayload.getBytes(StandardCharsets.UTF_8));
+            if (result == RESULT_OK && uri != null) {
+                String payload = exportPayload;
+                if (payload == null) {
+                    try { payload = new String(Files.readAllBytes(pendingExport().toPath()), StandardCharsets.UTF_8); } catch (Exception ignored) { }
+                }
+                boolean saved = false;
+                if (payload != null && !payload.isEmpty()) {
+                    try {
+                        try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+                            if (out == null) throw new IOException("No output stream");
+                            out.write(payload.getBytes(StandardCharsets.UTF_8));
+                        }
+                        saved = true; // only once the stream has closed without error
+                    } catch (Exception ignored) { }
+                }
+                if (saved) {
                     Toast.makeText(this, "Backup saved", Toast.LENGTH_SHORT).show();
-                } catch (Exception e) {
-                    Toast.makeText(this, "Couldn't save backup", Toast.LENGTH_LONG).show();
+                } else {
+                    // The picker already created the file; remove it so an empty backup is never mistaken for a real one.
+                    try { DocumentsContract.deleteDocument(getContentResolver(), uri); } catch (Exception ignored) { }
+                    Toast.makeText(this, "Couldn't save backup. Please try again.", Toast.LENGTH_LONG).show();
                 }
             }
             exportPayload = null;
+            //noinspection ResultOfMethodCallIgnored
+            pendingExport().delete();
         } else if (req == REQ_IMPORT && result == RESULT_OK && uri != null) {
             try (InputStream in = getContentResolver().openInputStream(uri)) {
                 ByteArrayOutputStream buf = new ByteArrayOutputStream();

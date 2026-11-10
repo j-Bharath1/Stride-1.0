@@ -13,6 +13,11 @@ const N = (function () {
     _mock: true, _spoken: [],
     load: k => (ls ? ls.getItem('stride_' + k) : mem[k]) || '',
     save: (k, v) => { if (ls) ls.setItem('stride_' + k, v); else mem[k] = v; return true; },
+    quarantine: k => {
+      const v = mock.load(k), aside = k + '.damaged-' + Date.now();
+      if (ls) { ls.setItem('stride_' + aside, v); ls.removeItem('stride_' + k); } else { mem[aside] = v; delete mem[k]; }
+      return true;
+    },
     speak: t => { mock._spoken.push(t); console.log('[voice]', t); },
     speakNow: t => mock.speak(t), stopSpeaking() {}, setVoice() {},
     vibrate() {}, keepAwake() {}, toast: t => console.log('[toast]', t),
@@ -116,17 +121,55 @@ const DB = {
     entries: [], diary: {}, goals: {}, runs: [], plan: null, challenges: [], custom: [], gym: [], program: null, routines: [],
   },
   data: {},
+  problems: [], // keys whose saved file could not be used at start
+  locked: {},   // damaged files that could not be moved aside; never overwrite these
+  unsaved: {},  // keys whose last save failed; retried on the next save
+  isPlainObject(v) { return !!v && typeof v === 'object' && !Array.isArray(v); },
+  // Whether v has the type its default has. Shared by start-up and restore.
+  shapeOk(k, v) {
+    const def = DB.DEFAULTS[k];
+    if (Array.isArray(def)) return Array.isArray(v);
+    if (DB.isPlainObject(def)) return DB.isPlainObject(v);
+    return true;
+  },
   init() {
     for (const k of DB.KEYS) {
-      let v = null;
-      try { const raw = N.load(k); if (raw) v = JSON.parse(raw); } catch (e) { v = null; }
       const def = JSON.parse(JSON.stringify(DB.DEFAULTS[k]));
-      DB.data[k] = v == null ? def : (def && typeof def === 'object' && !Array.isArray(def) && v && !Array.isArray(v) ? Object.assign(def, v) : v);
+      let raw, v = null, ok = true;
+      try { raw = N.load(k); } catch (e) { raw = null; }
+      if (raw === '') { DB.data[k] = def; continue; } // never saved
+      if (typeof raw !== 'string') ok = false;         // the file exists but could not be read
+      else { try { v = JSON.parse(raw); } catch (e) { ok = false; } }
+      if (ok && v != null && !DB.shapeOk(k, v)) ok = false;
+      if (!ok) {
+        // Keep the damaged file for recovery rather than letting the next save replace it.
+        DB.problems.push(k);
+        let moved = false;
+        try { moved = typeof N.quarantine === 'function' && N.quarantine(k) === true; } catch (e) { moved = false; }
+        if (!moved) DB.locked[k] = true;
+        DB.data[k] = def;
+        continue;
+      }
+      DB.data[k] = v == null ? def : (DB.isPlainObject(def) ? Object.assign(def, v) : v);
     }
   },
   get(k) { return DB.data[k]; },
   set(k, v) { DB.data[k] = v; DB.save(k); },
-  save(k) { N.save(k, JSON.stringify(DB.data[k])); },
+  write(k) {
+    if (DB.locked[k]) return false;
+    try { return N.save(k, JSON.stringify(DB.data[k])) !== false; } catch (e) { return false; }
+  },
+  // Returns whether the key was written. Earlier failed saves are retried first.
+  save(k) {
+    for (const u of Object.keys(DB.unsaved)) if (u !== k && DB.write(u)) delete DB.unsaved[u];
+    const ok = DB.write(k);
+    if (ok) delete DB.unsaved[k];
+    else {
+      DB.unsaved[k] = true;
+      App.toast(DB.locked[k] ? 'Not saved: this data file is damaged. Restore a backup.' : "Couldn't save. Your phone may be out of storage.");
+    }
+    return ok;
+  },
   exportAll() { const o = { app: 'stride', version: 1, exportedAt: new Date().toISOString() }; for (const k of DB.KEYS) o[k] = DB.data[k]; return JSON.stringify(o); },
   importAll(json) {
     // Validate the entire backup before changing anything. A malformed or partial file
@@ -137,17 +180,36 @@ const DB = {
     const next = {};
     for (const k of DB.KEYS) {
       if (!(k in o)) continue; // older backups may legitimately omit newer keys
-      const v = o[k], def = DB.DEFAULTS[k];
-      const expectsArray = Array.isArray(def);
-      if (expectsArray && !Array.isArray(v)) throw new Error('Invalid backup data: ' + k);
-      if (!expectsArray && def && typeof def === 'object' && !Array.isArray(def) && (!v || typeof v !== 'object' || Array.isArray(v))) throw new Error('Invalid backup data: ' + k);
-      if (k === 'diary' && (!v || typeof v !== 'object' || Array.isArray(v))) throw new Error('Invalid diary data');
+      const v = o[k];
+      if (!DB.shapeOk(k, v)) throw new Error('Invalid backup data: ' + k);
       next[k] = v;
     }
     // Merge settings with defaults so a backup from an older app remains usable.
     if (next.settings) next.settings = Object.assign({}, DB.DEFAULTS.settings, next.settings);
-    for (const k of DB.KEYS) if (k in next) DB.data[k] = next[k];
-    for (const k of DB.KEYS) if (k in next) DB.save(k);
+    const before = {};
+    for (const k of DB.KEYS) if (k in next) { before[k] = DB.data[k]; DB.data[k] = next[k]; }
+    const failed = [], wasLocked = {};
+    for (const k of Object.keys(before)) {
+      wasLocked[k] = !!DB.locked[k];
+      delete DB.locked[k]; // restoring deliberately replaces a damaged file
+      if (!DB.write(k)) failed.push(k);
+    }
+    if (failed.length) {
+      // Put back what was there, so a failed restore never leaves a mix of old and new.
+      for (const k of Object.keys(before)) {
+        if (wasLocked[k]) {
+          // Its damaged file is either already replaced by restored data (keep that) or still there (protect it again).
+          if (!failed.includes(k)) continue;
+          DB.locked[k] = true;
+        }
+        DB.data[k] = before[k];
+        if (!DB.locked[k] && !DB.write(k)) DB.unsaved[k] = true;
+      }
+      const err = new Error('Restore failed while saving: ' + failed.join(', '));
+      err.saveFailed = true;
+      throw err;
+    }
+    for (const k of Object.keys(before)) delete DB.unsaved[k];
   },
 };
 
@@ -231,6 +293,7 @@ const App = {
     App.on('data', () => { if (!App.stack.length) App.render(); });
     App.go('home');
     App.emit('boot');
+    if (DB.problems.length) App.dataWarning();
   },
 
   go(tab) {
@@ -310,6 +373,19 @@ const App = {
     clearTimeout(App._tt); App._tt = setTimeout(() => el.classList.remove('on'), 2200);
   },
 
+  dataWarning() {
+    const kept = DB.problems.filter(k => !DB.locked[k]), locked = DB.problems.filter(k => DB.locked[k]);
+    let text = 'Some of your saved data was damaged: ' + DB.problems.join(', ') + '. STRIDE started with that part empty. ';
+    if (kept.length) text += 'The damaged file was kept on the phone. ';
+    if (locked.length) text += 'It could not be moved aside, so STRIDE will not save over it. ';
+    text += 'If you have a backup, restore it from Profile.';
+    App.sheet(s => {
+      s.innerHTML = `<div class="h2">Some data couldn't be read</div><p class="muted">${esc(text)}</p>
+        <button class="btn volt mt16" style="width:100%" data-ok>OK</button>`;
+      s.querySelector('[data-ok]').onclick = () => App.closeSheet();
+    });
+  },
+
   confirm(title, text, okLabel, onOk, danger) {
     App.sheet(s => {
       s.innerHTML = `<div class="h2">${esc(title)}</div><p class="muted">${esc(text)}</p>
@@ -339,7 +415,7 @@ window.onNative = function (name, data) { App.emit('native:' + name, data); };
 App.on('native:route', r => { if (r === 'challenge') { App.popAll(); App.go('train'); setTimeout(() => App.emit('open-active-challenge'), 50); } });
 App.on('native:import', txt => {
   try { DB.importAll(txt); App.toast('Backup restored'); App.popAll(); App.go('home'); }
-  catch (e) { App.toast('That file isn\'t a STRIDE backup'); }
+  catch (e) { App.toast(e && e.saveFailed ? "Couldn't restore: saving failed, so nothing was changed." : 'That file isn\'t a STRIDE backup'); }
 });
 
 // Simple beep for countdowns (Web Audio works offline).

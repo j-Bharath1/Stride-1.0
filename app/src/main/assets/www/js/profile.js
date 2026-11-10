@@ -114,7 +114,8 @@ const Profile = {
 
   onboard() {
     const st = DB.get('settings');
-    if (st.onboarded || App.stack.length) return;
+    // Never cover another sheet, such as the damaged-data warning; onboarding returns on the next start.
+    if (st.onboarded || App.stack.length || $('#sheet-wrap').classList.contains('open')) return;
     App.sheet(s => {
       s.innerHTML = `<div class="display" style="font-size:40px;line-height:.95">Welcome to<br><span class="volt">STRIDE</span></div>
         <p class="muted">Runs with a voice coach, guided workouts, push-up challenges and your training diary. All offline.</p>

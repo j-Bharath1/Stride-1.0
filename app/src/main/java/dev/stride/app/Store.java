@@ -18,14 +18,26 @@ final class Store {
         return new File(dir, safe + ".json");
     }
 
+    /** The saved text, "" if nothing was ever saved, or null if the file exists but cannot be read. */
     static synchronized String load(Context c, String key) {
         File f = file(c, key);
         if (!f.exists()) return "";
         try {
             return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
         } catch (Exception e) {
-            return "";
+            return null;
         }
+    }
+
+    /**
+     * Moves a damaged file aside so the next save cannot overwrite it, keeping it for recovery.
+     * Returns true when nothing is left at the original path.
+     */
+    static synchronized boolean quarantine(Context c, String key) {
+        File f = file(c, key);
+        if (!f.exists()) return true;
+        File aside = new File(f.getParentFile(), f.getName().replace(".json", "") + ".damaged-" + System.currentTimeMillis() + ".json");
+        return f.renameTo(aside);
     }
 
     static synchronized boolean save(Context c, String key, String value) {
