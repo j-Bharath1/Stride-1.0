@@ -1,0 +1,6 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- bold forward-leaning S stripe -->
+    <path android:fillColor="#FF000000"
+        android:pathData="M70,34 L46,34 C38,34 34,39 36,45 C38,51 44,52 52,53 C60,54 64,56 62,62 C61,66 57,68 52,68 L32,68 L38,76 L56,76 C66,76 72,71 73,63 C74,55 68,50 58,49 C50,48 46,47 46,44 C46,42 48,41 51,41 L74,41 Z"/>
+</vector>

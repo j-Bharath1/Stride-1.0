@@ -1,0 +1,9 @@
+<html><body style="margin:0">
+<script src="tools3d/three.min.js"></script>
+<script src="tools3d/figures.js"></script>
+<script src="tools3d/exercises.js"></script>
+<script src="tools3d/fig3d.js"></script>
+<script>
+window.LIST = Object.keys(EX).map(id => ({ id, frames: EX[id].fig.frames.length }));
+window.shot = (id, f, w, h) => Fig3D.still(id + ':' + f, EX[id].fig, f, w, h, true, Fig3D.highlightFor(EX[id].muscles));
+</script></body></html>

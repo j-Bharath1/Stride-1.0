@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>STRIDE</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <main id="view"></main>
+  <nav id="tabs">
+    <button data-tab="home"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Home</span></button>
+    <button data-tab="train"><svg viewBox="0 0 24 24"><path d="M12 2a2.2 2.2 0 1 1 0 4.4A2.2 2.2 0 0 1 12 2ZM4 8h16v2.2h-5.4V22h-2.2v-5.5h-.8V22H9.4V10.2H4z"/></svg><span>Train</span></button>
+    <button data-tab="gym"><svg viewBox="0 0 24 24"><path d="M6.5 6h2v12h-2zm9 0h2v12h-2zM3 8.5h2.5v7H3zm15.5 0H21v7h-2.5zM8.5 11h7v2h-7z"/></svg><span>Gym</span></button>
+    <button data-tab="log"><svg viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 16H5V10h14zM7 12h5v5H7z"/></svg><span>Log</span></button>
+    <button data-tab="progress"><svg viewBox="0 0 24 24"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/></svg><span>Progress</span></button>
+  </nav>
+</div>
+<div id="overlay"></div>
+<div id="sheet-wrap"><div id="sheet-bg"></div><div id="sheet"></div></div>
+<div id="toast"></div>
+
+<script src="js/core.js"></script>
+<script src="js/figures.js"></script>
+<script src="js/exercises.js"></script>
+<script src="js/workouts.js"></script>
+<script src="js/data.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/home.js"></script>
+<script src="js/train.js"></script>
+<script src="js/gym.js"></script>
+<script src="js/log.js"></script>
+<script src="js/progress.js"></script>
+<script src="js/profile.js"></script>
+<script>App.boot();</script>
+</body>
+</html>
