@@ -20,7 +20,13 @@ jobs:
           mkdir -p /tmp/store-test
           javac -d /tmp/store-test tools/test/java/android/content/Context.java app/src/main/java/dev/stride/app/Store.java tools/test/java/dev/stride/app/StoreTest.java
           java -cp /tmp/store-test dev.stride.app.StoreTest
-      - uses: android-actions/setup-android@v3
+      # GitHub's Ubuntu runners come with the Android SDK; setup-android@v3 no longer works on them.
+      - name: Use the preinstalled Android SDK
+        run: |
+          test -d "$ANDROID_HOME" || { echo "ANDROID_HOME is not set on this runner"; exit 1; }
+          echo "Android SDK: $ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
       - uses: actions/upload-artifact@v4
